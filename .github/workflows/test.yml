@@ -1,0 +1,63 @@
+name: GitHub Actions CD - UNTIDETECH BE DEV
+
+on:
+  push:
+    branches: ["dev"]
+
+jobs:
+  notify_start:
+    runs-on: ubuntu-latest
+    # environment: dev-private-cms
+    steps:
+      - name: Notify Telegram - Deployment Starting
+        run: |
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          -H 'Content-Type: application/json' \
+          -d '{
+            "chat_id": "${{ secrets.TELEGRAM_CHAT_ID }}",
+            "text": "🚀 Triển khai *9PRX PRIVATE CMS BACKEND (DEV)* bắt đầu...",
+            "parse_mode": "Markdown"
+          }'
+
+  deploy:
+    runs-on: ubuntu-latest
+    # environment: dev-private-cms
+    needs: [notify_start]
+    steps:
+      - name: Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+
+          echo "Host *" >> ~/.ssh/config
+          echo "  IdentityFile ~/.ssh/id_ed25519" >> ~/.ssh/config
+          echo "  StrictHostKeyChecking no" >> ~/.ssh/config
+
+      - name: Deploy to server via SSH
+        run: |
+          ssh -o StrictHostKeyChecking=no root@49.13.117.14 << 'EOF'
+            cd /home/sources/9prx-private-cms-be
+            git checkout dev
+            git pull origin dev
+            yarn install
+            yarn build
+            pm2 restart analysis-9proxy-backend
+          EOF
+
+  notify_completion:
+    if: always()
+    runs-on: ubuntu-latest
+    # environment: dev-private-cms
+    needs: [deploy]
+    steps:
+      - name: Notify Telegram - Deployment Completion
+        run: |
+          if [ "${{ needs.deploy.result }}" == "success" ]; then
+            MESSAGE="✅ Triển khai *9PRX PRIVATE CMS BACKEND (DEV)* thành công 🎉🎉🎉"
+          else
+            MESSAGE="❌ Triển khai *9PRX PRIVATE CMS BACKEND (DEV)* thất bại 😒😒😒"
+          fi
+          curl -s -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          -H 'Content-Type: application/json' \
+          -d "{\"chat_id\": \"${{ secrets.TELEGRAM_CHAT_ID }}\", \"text\": \"$MESSAGE\", \"parse_mode\": \"Markdown\"}"
